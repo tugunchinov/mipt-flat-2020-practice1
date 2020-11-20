@@ -13,6 +13,12 @@
 #include <string>
 #include <string_view>
 
+enum {
+  INFINITY = -1,
+  ERROR = -2,
+  NOLEN = -3
+};
+
 int FindMaxCharEndingLength(std::string_view regex, char x);
 
 int main() {
@@ -22,20 +28,30 @@ int main() {
   std::cin >> x;
 
   auto result = FindMaxCharEndingLength(regex, x);
-  if (result != -1) {
-    std::cout << result << std::endl;
+  if (result == ERROR) {
+    std::cerr << "Error!" << std::endl;
+    return 1;
+  } else if (result == INFINITY) {
+    std::cout << "Infinity" << std::endl;
   } else {
-    std::cout << "INF" << std::endl;
+    std::cout << result << std::endl;
   }
-
   return 0;
 }
 
+int max(int lhs, int rhs) {
+  if (lhs == INFINITY) {
+    return lhs;
+  }
+  if (rhs == INFINITY) {
+    return rhs;
+  }
+  return std::max(lhs, rhs);
+}
+
 struct RegexProperties {
-  int max_end_length;
-  bool starts_from_beginning;
-  bool has_empty_word;
-  bool has_word_in_char_only;
+  int max_end_len;
+  int x_word_max_len;
 };
 
 void ProcessEmptyWord(std::stack<RegexProperties>& stack);
@@ -43,7 +59,6 @@ void ProcessSymbol(char x, char ch, std::stack<RegexProperties>& stack);
 void ProcessPlus(std::stack<RegexProperties>& stack);
 void ProcessDot(std::stack<RegexProperties>& stack);
 void ProcessKleeneStar(std::stack<RegexProperties>& stack);
-void HandleError();
 
 int FindMaxCharEndingLength(std::string_view regex, char x) {
   std::stack<RegexProperties> stack;
@@ -54,105 +69,82 @@ int FindMaxCharEndingLength(std::string_view regex, char x) {
       ProcessSymbol(x, ch, stack);
     } else if (ch == '+') {
       if (stack.size() < 2) {
-        HandleError();
+        return ERROR;
       }
       ProcessPlus(stack);
     } else if (ch == '.') {
       if (stack.size() < 2) {
-        HandleError();
+        return ERROR;
       }
       ProcessDot(stack);
     } else if (ch == '*') {
       if (stack.empty()) {
-        HandleError();
+        return ERROR;
       }
       ProcessKleeneStar(stack);
     } else {
-      HandleError();
+      return ERROR;
     }
   }
   if (stack.size() > 1) {
-    HandleError();
+    return ERROR;
   }
-  return stack.top().max_end_length;
-}
-
-void HandleError() {
-  std::cerr << "ERROR" << std::endl;
-  exit(1);
+  return stack.top().max_end_len;
 }
 
 void ProcessKleeneStar(std::stack<RegexProperties>& stack) {
   auto regex = stack.top();
   stack.pop();
-  if (regex.has_word_in_char_only) {
-    stack.push({-1, true, true, true});
+  if (regex.x_word_max_len > 0 || regex.x_word_max_len == INFINITY) {
+    stack.push({INFINITY, INFINITY});
   } else {
-    stack.push({regex.max_end_length,
-                regex.starts_from_beginning,
-                true,
-                false});
+    stack.push({regex.max_end_len, 0});
   }
 }
 
 void ProcessDot(std::stack<RegexProperties>& stack) {
-  auto regex2 = stack.top();
+  auto rhs = stack.top();
   stack.pop();
-  auto regex1 = stack.top();
+  auto lhs = stack.top();
   stack.pop();
-  bool has_empty_word =  regex1.has_empty_word && regex2.has_empty_word;
-  bool has_word_in_char_only =
-      (regex2.has_empty_word && regex1.has_word_in_char_only) ||
-      (regex1.has_empty_word && regex2.has_word_in_char_only) ||
-      (regex1.has_word_in_char_only && regex2.has_word_in_char_only);
-  if (regex2.starts_from_beginning) {
-    bool starts_from_beginning = regex1.starts_from_beginning;
-    stack.push({regex1.max_end_length + regex2.max_end_length,
-                starts_from_beginning,
-                has_empty_word,
-                has_word_in_char_only});
-  } else if (regex2.has_empty_word) {
-    bool starts_from_beginning =
-        (regex1.max_end_length >= regex2.max_end_length) ?:
-        regex1.starts_from_beginning;
-    stack.push({std::max(regex1.max_end_length, regex2.max_end_length),
-                starts_from_beginning,
-                has_empty_word,
-                has_word_in_char_only});
+  int x_word_max_len = NOLEN;
+  if (lhs.x_word_max_len != NOLEN && rhs.x_word_max_len != NOLEN) {
+    if (lhs.x_word_max_len == INFINITY || rhs.x_word_max_len == INFINITY) {
+      x_word_max_len = INFINITY;
+    } else {
+      x_word_max_len = lhs.x_word_max_len + rhs.x_word_max_len;
+    }
+  }
+  if (rhs.x_word_max_len == NOLEN) {
+    stack.push(rhs);
   } else {
-      stack.push({regex2.max_end_length,
-                  false,
-                  has_empty_word,
-                  has_word_in_char_only});
+    if (lhs.max_end_len == INFINITY) {
+      stack.push({INFINITY, x_word_max_len});
+    } else {
+      stack.push({max(lhs.max_end_len + rhs.x_word_max_len, rhs.max_end_len),
+                 x_word_max_len});
+    }
   }
 }
 
 void ProcessPlus(std::stack<RegexProperties>& stack) {
-  auto regex2 = stack.top();
+  auto rhs = stack.top();
   stack.pop();
-  auto regex1 = stack.top();
+  auto lhs = stack.top();
   stack.pop();
-  int max_end_length = std::max(regex1.max_end_length, regex2.max_end_length);
-  bool starts_from_beginning = max_end_length == regex1.max_end_length ?
-      regex1.starts_from_beginning : regex2.starts_from_beginning;
-  bool has_empty_word = max_end_length == regex1.max_end_length ?
-      regex1.has_empty_word : regex2.has_empty_word;
-  bool has_word_in_char_only =
-      regex1.has_word_in_char_only || regex2.has_word_in_char_only;
-  stack.push({max_end_length,
-              starts_from_beginning,
-              has_empty_word,
-              has_word_in_char_only});
+  int max_end_len = max(lhs.max_end_len, rhs.max_end_len);
+  int x_word_max_len = max(lhs.x_word_max_len, rhs.x_word_max_len);
+  stack.push({max_end_len, x_word_max_len});
 }
 
 void ProcessSymbol(char x, char ch, std::stack<RegexProperties>& stack) {
   if (ch == x) {
-    stack.push({1, true, false, true});
+    stack.push({1, 1});
   } else {
-    stack.push({0, false, false, false});
+    stack.push({0, NOLEN});
   }
 }
 
 void ProcessEmptyWord(std::stack<RegexProperties>& stack) {
-  stack.push({0, false, true, false});
+  stack.push({0, 0});
 }
